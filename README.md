@@ -2,4 +2,7 @@
 Hello, Haskell !
 
 ## Run (dev)
-`cargo run`
+`cabal run`
+
+## Build
+`cabal build`
