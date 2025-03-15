@@ -68,6 +68,7 @@ executable aghaskell-io
 
     -- Other library packages from which modules are imported.
     build-depends:    base ^>=4.17.2.1
+                    , sdl2 ^>=2.5.5.0
 
     -- Directories containing source files.
     hs-source-dirs:   app
