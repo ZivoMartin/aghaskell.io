@@ -53,6 +53,13 @@ extra-doc-files:    CHANGELOG.md
 common warnings
     ghc-options: -Wall
 
+library
+    build-depends:      base ^>=4.17.2.1
+    hs-source-dirs:     libs
+
+    exposed-modules:
+    default-language:   Haskell2010
+
 executable client
     -- Import common warning flags.
     import:           warnings
@@ -61,7 +68,7 @@ executable client
     main-is:          Main.hs
 
     -- Modules included in this executable, other than Main.
-    -- other-modules:
+    other-modules:
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
@@ -71,7 +78,7 @@ executable client
                     , sdl2 ^>=2.5.5.0
 
     -- Directories containing source files.
-    hs-source-dirs:   client
+    hs-source-dirs:   client, libs
 
     -- Base language which the package is written in.
     default-language: Haskell2010
@@ -84,7 +91,7 @@ executable server
     main-is:          Main.hs
 
     -- Modules included in this executable, other than Main.
-    -- other-modules:
+    other-modules:
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
@@ -93,8 +100,7 @@ executable server
     build-depends:    base ^>=4.17.2.1
 
     -- Directories containing source files.
-    hs-source-dirs:   server
+    hs-source-dirs:   server, libs
 
     -- Base language which the package is written in.
     default-language: Haskell2010
-    
