@@ -1,8 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
+
 module Main where
 
-import SDL
 import Control.Monad (unless)
+import SDL
 
 main :: IO ()
 main = do
@@ -18,8 +19,9 @@ appLoop renderer = do
   let eventIsQPress event =
         case eventPayload event of
           KeyboardEvent keyboardEvent ->
-            keyboardEventKeyMotion keyboardEvent == Pressed &&
-            keysymKeycode (keyboardEventKeysym keyboardEvent) == KeycodeQ
+            keyboardEventKeyMotion keyboardEvent == Pressed
+              && keysymKeycode (keyboardEventKeysym keyboardEvent) == KeycodeQ
+          QuitEvent -> True
           _ -> False
       qPressed = any eventIsQPress events
   rendererDrawColor renderer $= V4 0 0 255 255
