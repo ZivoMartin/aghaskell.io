@@ -4,4 +4,4 @@ import Messages
 
 main :: IO ()
 main = do
-  putStrLn "Hello"
+  putStrLn "Hello from Server"
