@@ -1,9 +1,16 @@
 module Main where
-import Messages ( ClientMessage(..), ServerMessage, PlayerData )
+import Messages ( ClientMessage(..), ServerMessage (..), PlayerData, Ip, sendMessage )
+import Control.Concurrent.STM (TQueue)
+import Control.Monad (forever)
+import Data.ByteString.Lazy ( ByteString )
+import Data.Binary (encode)
+
+import Control.Concurrent (forkIO, threadDelay)
+import Control.Concurrent.STM (atomically, readTQueue, readTVar, newTQueueIO, writeTQueue, newTVarIO, TVar, readTVarIO)
 
 -- | The server protocol will be as follow:
 -- | Some threads called receivers threads handle the client messages reception and deserialisation
--- Some threads call broadcaster threads handle the server refresh messages broadcast to all the cllients
+-- Some threads call broadcaster threads handle the server refresh messages broadcast to all the clients
 -- | They both work in parallel
 -- | Server receives all the clients messages forwarded by the receivers threads and modify its local view of the game
 -- | Every 200 ms, server interrupt the slows broadcaster threads and give the a new cloned view of the game
@@ -12,7 +19,6 @@ import Messages ( ClientMessage(..), ServerMessage, PlayerData )
 
 
 type Position = (Int, Int)
-type Ip = String
 
 data Client = Client {
   getPlayerData :: PlayerData,
@@ -21,10 +27,20 @@ data Client = Client {
 
 newtype Server = Server {
   getClients :: [Client]
-  }
+  } 
 
-sendMessage :: ServerMessage -> ()
-sendMessage msg = ()
+
+serverBroadcastDatas :: TVar Server -> IO ([Ip], [PlayerData])
+serverBroadcastDatas server = do
+  serverValue <- readTVarIO server  
+  let clients = getClients serverValue  
+  return (serverBroadcastDatasRec clients [] [])
+
+  where
+    serverBroadcastDatasRec :: [Client] -> [Ip] -> [PlayerData] -> ([Ip], [PlayerData])
+    serverBroadcastDatasRec [] ips playersDatas = (ips, playersDatas)
+    serverBroadcastDatasRec (client : t) ips playersDatas =
+      serverBroadcastDatasRec t (getIp client : ips) (getPlayerData client : playersDatas)
 
 serverHandleClientMessage :: ClientMessage -> IO ()
 serverHandleClientMessage ClientDummy = putStrLn "Dummy"
@@ -37,6 +53,39 @@ serverNewClient :: Server -> Client  -> Server
 serverNewClient server client =
   Server (client : getClients server)
 
+
+  -- | Listen on the network, deserialize messages and send it to the main
+serverListener :: TQueue ClientMessage -> TVar Server -> IO ()
+serverListener queue server = forever $ do
+  msg <- atomically $ readTQueue queue
+  putStrLn "Message"
+
+broadcastGameState :: [Ip] -> [PlayerData] -> IO ()
+broadcastGameState ips playersDatas =
+  if null ips || null playersDatas
+    then putStrLn "Error: Empty input lists"
+    else mapM_ (sendEncodedMessage (encode (Refresh playersDatas))) ips 
+  where
+    sendEncodedMessage :: ByteString -> Ip -> IO ()
+    sendEncodedMessage playerData ip = sendMessage ip playerData
+
+
+
+
+broadcastInitializer :: TVar Server -> IO ()
+broadcastInitializer server = forever $ do
+  threadDelay 200000 -- 200 ms
+  (ips, playersDatas) <- serverBroadcastDatas server 
+  _ <- forkIO $ broadcastGameState ips playersDatas
+  putStrLn "OK"
+
+
 main :: IO ()
 main = do
-  serverHandleClientMessage ClientDummy
+  server <- newTVarIO (Server [])
+  queue <- newTQueueIO 
+  _ <- forkIO $ serverListener queue server
+  _ <- forkIO $ broadcastInitializer server
+  forever $ do
+    _ <- atomically $ writeTQueue queue ClientDummy
+    threadDelay (500 * 1000) -- 500ms delay
