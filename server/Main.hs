@@ -1,4 +1,5 @@
 module Main where
+import Messages ( ClientMessage(..), ServerMessage, PlayerData )
 
 -- | The server protocol will be as follow:
 -- | Some threads called receivers threads handle the client messages reception and deserialisation
@@ -9,9 +10,6 @@ module Main where
 -- | Broadcaster threads will all use the shared client list to refresh client memory
 -- | Once we finished to modify the client list we restard the client message reception phase
 
-
-import Messages
-import Messages (ClientMessage(ClientDummy), ServerMessage)
 
 type Position = (Int, Int)
 type Ip = String
