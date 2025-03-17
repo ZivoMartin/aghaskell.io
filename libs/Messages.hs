@@ -1,37 +1,49 @@
-module Messages where 
+{-# LANGUAGE DeriveGeneric #-}
 
-import Data.ByteString
+module Messages where
+
+import Vec2 (Vec2)
+import Data.ByteString ( ByteString )
+import Network.Socket.ByteString (sendTo)
+import Network.Socket
+
+import GHC.Generics (Generic)
+import Data.Binary (Binary)
+
 
 
 -- | x, y, size
-type PlayerData = (Int, Int, Int)
+type PlayerData = (Position, Int)
+type Ip = (String, String) -- ip, port
+type Position = Vec2
+
+sendMessage :: Ip -> ByteString -> IO ()
+sendMessage (ip, port) message = withSocketsDo $ do
+    addr <- resolve ip port
+    sock <- openTheSocket addr
+    _ <- sendTo sock message (addrAddress addr)
+    putStrLn $ "Message sent to " ++ ip ++ ":" ++ port
+    close sock
+  where
+    resolve host p = do
+        let hints = defaultHints { addrSocketType = Datagram }
+        addr:_ <- getAddrInfo (Just hints) (Just host) (Just p)
+        return addr
+    openTheSocket addr = socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
 
 -- | Messages sent by the server
 data ServerMessage =
   -- | An array representing the position and the size of all the player in the game
-  -- | The position of the player that receiv the message, eventually with a new size
-  -- | Note that the players list only contains other players
-  Refresh [PlayerData] PlayerData
-  -- | Sent when someone eat the player. 
-  | Killed
-  deriving (Show, Read)
+  Refresh [PlayerData]
+  deriving (Show, Read, Generic)
+
+instance Binary ServerMessage
 
 -- | Messages sent by the client
 data ClientMessage =
   -- | A simple Dummy message
-  ClientDummy
-  deriving (Show, Read)
+  Connect Ip
+  | Disconnect Ip
+  deriving (Show, Read, Generic)
 
-
-server_serialize :: ServerMessage -> ByteString
-server_serialize msg = undefined
-
-server_deserialize :: ByteString -> ServerMessage
-server_deserialize msg = undefined
-
-
-client_serialize :: ClientMessage -> ByteString
-client_serialize msg = undefined
-
-client_deserialize :: ByteString -> ClientMessage
-client_deserialize msg = undefined
+instance Binary ClientMessage
