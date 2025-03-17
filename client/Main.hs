@@ -4,18 +4,21 @@ module Main where
 
 -- import SDL.Primitive (circle)
 import SDL
-import WindowRenderer
-import Foreign.C.Types (CInt)
-import Control.Concurrent.STM (atomically, newTQueueIO, newTVarIO, TVar, readTVarIO, modifyTVar')
 
-import Network.Socket
-import Messages (ClientMessage (..), ServerMessage (..), sendMessage, PlayerData, Ip)
+import Control.Concurrent.STM (atomically, newTVarIO, TVar, readTVarIO, modifyTVar')
+
+
+
+import Messages (ClientMessage (..), ServerMessage (..), sendMessage, PlayerData, Ip, Position)
 import Control.Concurrent (forkIO, threadDelay)
 import Control.Monad (forever, when)
 import Network.Socket.ByteString (recvFrom)
 import Data.Binary (encode, decodeOrFail)
-import Data.ByteString ( ByteString, toStrict, fromStrict )
-import Const (servIp)
+import Data.ByteString ( toStrict, fromStrict )
+import Const (servIp, local, mapWidth, mapHeight)
+import Data.Word (Word8)
+import Data.Bits (shiftR, (.&.))
+import Network.Socket
 
 data Memory = Memory {
   getPlayers :: [PlayerData],
@@ -26,16 +29,30 @@ data Memory = Memory {
 main :: IO ()
 main = do
   initializeAll
-  window <- createWindow "Aghaskell" defaultWindow
+  window <- createWindow "Aghaskell" (defaultWindow { windowInitialSize = V2 (fromIntegral mapWidth) (fromIntegral mapHeight) })
   renderer <- createRenderer window (-1) defaultRenderer
   memory <- newTVarIO (Memory [] ("", ""))
 
   _ <- forkIO $ udpServer memory
-  threadDelay 2000000
-  appLoop memory renderer HomeScreen
+  appLoop memory renderer
   destroyWindow window
   memValue <- readTVarIO memory
   closeClient (getMyIp memValue)
+
+mousePositionSender :: Ip -> IO ()
+mousePositionSender ip = mousePosSpamer (0, 0)
+  where
+    mousePosSpamer :: Position  -> IO ()
+    mousePosSpamer prevMousePos = do
+      threadDelay 100000
+      (P (V2 x y)) <- getAbsoluteMouseLocation  
+      let newMousePos = (fromIntegral x, fromIntegral y)
+      if prevMousePos /= newMousePos
+        then do
+          sendMessage servIp (toStrict (encode (NewMousePos ip newMousePos)))
+          mousePosSpamer newMousePos
+        else mousePosSpamer newMousePos
+  
 
 handleServerMessage :: TVar Memory -> ServerMessage -> IO ()
 handleServerMessage memory (Refresh players) = do
@@ -43,13 +60,31 @@ handleServerMessage memory (Refresh players) = do
     Memory players ip
 
 
-getIp :: AddrInfo -> IO (String, String)
-getIp addr = do
-    return $ case addrAddress addr of
-        SockAddrInet port host -> (show host, show port)
-        SockAddrInet6 _ _ (h1, h2, h3, h4) _ -> 
-            return $ show h1 ++ ":" ++ show h2 ++ ":" ++ show h3 ++ ":" ++ show h4
-        _ -> return "Unknown"
+getIp :: Socket -> IO (String, String)
+getIp sock = do
+    addr <- getSocketName sock
+    case addr of
+        SockAddrInet port _ -> do
+          ip <- getOnlyIp
+          return (if local then "127.0.0.1" else ip, show port)
+        SockAddrInet6 port _ _ _ -> return ("[IPv6 unsupported]", show port)
+        _ -> error "Unsupported socket address type"
+  where
+    getOnlyIp :: IO String
+    getOnlyIp = do
+       googleSock <- socket AF_INET Datagram defaultProtocol
+       connect googleSock (SockAddrInet 53 (tupleToHostAddress (8,8,8,8)))
+       SockAddrInet _ localHost <- getSocketName googleSock
+       close googleSock
+       return $ hostAddressToIP localHost
+     where 
+       hostAddressToIP :: HostAddress -> String
+       hostAddressToIP addr =
+         let b1 = fromIntegral ((addr `shiftR` 24) .&. 0xFF) :: Word8
+             b2 = fromIntegral ((addr `shiftR` 16) .&. 0xFF) :: Word8
+             b3 = fromIntegral ((addr `shiftR` 8) .&. 0xFF) :: Word8
+             b4 = fromIntegral (addr .&. 0xFF) :: Word8
+         in show b1 ++ "." ++ show b2 ++ "." ++ show b3 ++ "." ++ show b4
 
 connectClient :: Ip -> IO ()
 connectClient myIp = sendMessage servIp (toStrict (encode (Connect myIp)))
@@ -62,7 +97,8 @@ udpServer :: TVar Memory -> IO ()
 udpServer memory = withSocketsDo $ do
     addr <- resolve "0"
     sock <- openTheSocket addr
-    myIp <- getIp addr
+    myIp <- getIp sock
+    _ <- forkIO $ mousePositionSender myIp
     putStrLn $ "ip: " ++ show myIp 
     atomically $ modifyTVar' memory $
       \ _ -> Memory [] myIp
@@ -71,7 +107,6 @@ udpServer memory = withSocketsDo $ do
     putStrLn "Listening on client"
     _ <- forever $ do
       (msg, _) <- recvFrom sock 1024
-      putStrLn "Message from server"
       case decodeOrFail (fromStrict msg) of
         Left (_, _, err) -> putStrLn $ "Decoding error: " ++ err
         Right (_, _, serverMessage) -> handleServerMessage memory serverMessage
@@ -89,29 +124,35 @@ udpServer memory = withSocketsDo $ do
       return sock
 
 
-handleEvent :: Renderer -> Event -> IO Bool
-handleEvent renderer event = 
-    case eventPayload event of
-        MouseButtonEvent mouseEvent -> do
-            let P (V2 x y) = mouseButtonEventPos mouseEvent
-                radius = 20
-            if mouseButtonEventMotion mouseEvent == Pressed
-            then do
-                return True
-            else return True
 
+handleEvent :: Renderer -> Event -> IO Bool
+handleEvent _ event = 
+    case eventPayload event of
         QuitEvent -> return False
         _ -> return True
 
-appLoop :: TVar Memory -> Renderer -> WindowState -> IO ()
-appLoop memory renderer state = do
-    
-    rendererDrawColor renderer $= V4 0 255 0 255 
-    clear renderer
-    drawWindow renderer state
-    events <- pollEvents
-    -- shouldContinue <- True
-    present renderer
+renderPlayer :: Renderer -> PlayerData -> IO ()
+renderPlayer renderer ((x, y), _, size) = do
+  _ <- fillRect renderer (Just $ Rectangle (P $ V2 (fromIntegral x) (fromIntegral y)) (V2 (fromIntegral size) (fromIntegral size)))
+  putStr ""
 
-    when False $ appLoop memory renderer state
+
+appLoop :: TVar Memory -> Renderer -> IO ()
+appLoop memory renderer = do
+  
+  rendererDrawColor renderer $= V4 0 0 0 255 
+  clear renderer
+    
+  rendererDrawColor renderer $= V4 255 255 255 255
+  
+  mem <- readTVarIO memory
+
+  mapM_ (renderPlayer renderer) $ getPlayers mem
+    
+  events <- pollEvents
+  shouldContinue <- fmap and (mapM (handleEvent renderer) events)
+  present renderer
+  threadDelay 40000
+  when shouldContinue $ appLoop memory renderer
+
 

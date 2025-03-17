@@ -62,10 +62,10 @@ library
                       
     hs-source-dirs:     libs
 
-    exposed-modules:    WindowRenderer
-                        Messages
+    exposed-modules:    Messages
                         Const
                         Vec2
+                        NextPosition
 
     default-language:   Haskell2010
 
@@ -78,8 +78,7 @@ executable client
     main-is:          Main.hs
 
     -- Modules included in this executable, other than Main.
-    other-modules:    WindowRenderer
-                      Messages
+    other-modules:    Messages
                       Const
 
     -- LANGUAGE extensions used by modules in this package.
@@ -91,7 +90,6 @@ executable client
                     , network
                     , binary >=0.8 && <0.9
                     , stm
-                    -- , sdl2-gfx 
                     , bytestring
 
     -- Directories containing source files.
@@ -111,7 +109,8 @@ executable server
     other-modules: Messages
                    Const
                    Vec2
-
+                   NextPosition
+                   
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
 

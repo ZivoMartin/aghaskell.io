@@ -13,7 +13,7 @@ import Data.Binary (Binary)
 
 
 -- | x, y, size
-type PlayerData = (Position, Int)
+type PlayerData = (Position, Position, Int) -- Player position, Mouse position, size
 type Ip = (String, String) -- ip, port
 type Position = Vec2
 
@@ -22,7 +22,6 @@ sendMessage (ip, port) message = withSocketsDo $ do
     addr <- resolve ip port
     sock <- openTheSocket addr
     _ <- sendTo sock message (addrAddress addr)
-    putStrLn $ "Message sent to " ++ ip ++ ":" ++ port
     close sock
   where
     resolve host p = do
@@ -44,6 +43,7 @@ data ClientMessage =
   -- | A simple Dummy message
   Connect Ip
   | Disconnect Ip
+  | NewMousePos Ip Position
   deriving (Show, Read, Generic)
 
 instance Binary ClientMessage

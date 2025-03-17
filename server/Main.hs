@@ -1,6 +1,7 @@
 module Main where
 
 import Const (mapWidth, mapHeight)
+import NextPosition (nextPosition)
 
 import Network.Socket
 import Network.Socket.ByteString (recvFrom)
@@ -39,7 +40,7 @@ data Client = Client {
 defaultPlayerData :: IO PlayerData
 defaultPlayerData = do
   pos <- randomPosition
-  return (pos, 10) 
+  return (pos, pos, 10) 
 
 newtype Server = Server {
   getClients :: [Client]
@@ -74,6 +75,15 @@ serverHandleClientMessage server (Disconnect ip) = do
         | ip == clientIp = t
         | otherwise =  Client clientData clientIp : removeClient t
 
+serverHandleClientMessage server (NewMousePos ip pos) = do
+    putStrLn $ "Mouse changed" ++ show pos
+    atomically $ modifyTVar' server $ \(Server clients) -> Server (removeClient clients)
+    where
+      removeClient :: [Client] -> [Client]
+      removeClient [] = []
+      removeClient (Client (clientPlos, oldMousePos, size) clientIp : t)
+        | ip == clientIp = Client (clientPlos, pos, size) clientIp : t
+        | otherwise =  Client (clientPlos, oldMousePos, size) clientIp : removeClient t
 
   -- | Listen on the network, deserialize messages and send it to the main
 serverListener :: TQueue ClientMessage -> TVar Server -> IO ()
@@ -91,10 +101,17 @@ broadcastGameState ips playersDatas =
 
 broadcastInitializer :: TVar Server -> IO ()
 broadcastInitializer server = forever $ do
-  threadDelay 200000 -- 200 ms
+  threadDelay 30000
+  atomically $ modifyTVar' server
+    $ \ (Server players) -> Server (
+    map
+      (\ (Client playerData ip) -> Client (nextPosition playerData) ip)
+      players
+    )
+    
   (ips, playersDatas) <- serverBroadcastDatas server 
   forkIO $ broadcastGameState ips playersDatas
-
+  
 
 serverPort :: String
 serverPort = "4242"
@@ -107,7 +124,6 @@ udpServer queue = withSocketsDo $ do
     putStrLn $ "Listening on port  " ++ serverPort
     _ <- forever $ do
       (msg, _) <- recvFrom sock 1024  -- Réception d'un message en `ByteString strict`
-      putStrLn "New message !"
       case decodeOrFail (fromStrict msg) of
         Left (_, _, err) -> putStrLn $ "Decoding error: " ++ err
         Right (_, _, clientMessage) -> atomically $ writeTQueue queue clientMessage
